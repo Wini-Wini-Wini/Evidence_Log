@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SYSTEM_OVERRIDE // EVIDENCE_BOARD</title>
+
+  <!-- React & ReactDOM (Standalone) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;600;700&display=swap');
+    
+    :root {
+      --bg-void: #0A0B10;
+      --bg-grid: #1A1C23;
+      --paper-raw: #F4F4F0;
+      --paper-dark: #E6E6E1;
+      --ink-black: #111111;
+      --red-thread: #D32F2F;
+      --blue-tape: #2962FF;
+    }
+
+    * { box-sizing: border-box; }
+
+    body, html {
+      margin: 0; padding: 0;
+      background-color: var(--bg-void);
+      color: var(--ink-black);
+      overflow: hidden;
+      width: 100vw; height: 100vh;
+      font-family: 'Space Grotesk', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    input, textarea, .select-text {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    /* Subte noise texture overlay for realism */
+    .noise-overlay {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
+      opacity: 0.04; pointer-events: none; z-index: 9999;
+    }
+
+    /* Typewriter font for docs */
+    .doc-content {
+      font-family: 'Courier Prime', monospace;
+      font-size: 0.95rem; line-height: 1.4; white-space: pre-wrap;
+    }
+
+    /* Brutalist Scrollbar */
+    ::-webkit-scrollbar { width: 10px; background: var(--paper-dark); border-left: 2px solid var(--ink-black); }
+    ::-webkit-scrollbar-thumb { background: var(--ink-black); }
+
+    /* Selection */
+    ::selection { background: var(--red-thread); color: var(--paper-raw); }
+
+    /* Stamped Text Effect */
+    .stamp-effect {
+      color: var(--red-thread); font-weight: 900; text-transform: uppercase;
+      border: 3px solid var(--red-thread); padding: 2px 8px;
+      display: inline-block; transform: rotate(-5deg); opacity: 0.8;
+    }
+
+    /* Photographic Evidence Styling */
+    .evidence-photo {
+      width: 100%; height: auto;
+      border-bottom: 4px solid var(--ink-black);
+      pointer-events: none;
+      display: block;
+    }
+
+    /* Infinite Grid Background */
+    .infinite-grid {
+      background-image: 
+        linear-gradient(var(--bg-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+      will-change: background-position, background-size;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // --- AUDIO SYNTHESIS ---
+    const audioCtx = typeof window !== 'undefined' ? new (window.AudioContext || window.webkitAudioContext)() : null;
+    const playTone = (freq, type, duration, vol = 0.1, ramp = true) => {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+      if (ramp) gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      else gain.gain.setValueAtTime(0, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    };
+
+    const sfx = {
+      click: () => playTone(1200, 'triangle', 0.03, 0.05),
+      clack: () => playTone(400, 'square', 0.04, 0.05),
+      error: () => playTone(150, 'sawtooth', 0.2, 0.1),
+      connect: () => playTone(800, 'sine', 0.1, 0.05, false),
+      drop: () => playTone(80, 'square', 0.08, 0.1),
+      rip: () => playTone(300, 'sawtooth', 0.15, 0.08)
+    };
+
+    // --- ICONS ---
+    const IconFolder = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>;
+    const IconClose = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square"><path d="M18 6L6 18M6 6l12 12" /></svg>;
+    const IconTrash = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+    const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
+    const IconImage = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
+    const IconExpand = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>;
+
+    // --- IMAGE COMPRESSOR (Optimized for sharp color & size) ---
+    const processImageUpload = (file, callback) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          const MAX_SIZE = 1000; 
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          } else if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          callback(compressedBase64);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+
+    // --- MAIN SYSTEM COMPONENT ---
+    function InvestigationBoard() {
+      // --- STATE MANAGEMENT ---
+      const [isReady, setIsReady] = useState(false);
+      const [files, setFiles] = useState([]);
+      const [nodes, setNodes] = useState([]);
+      const [connections, setConnections] = useState([]);
+      
+      const [modalOpen, setModalOpen] = useState(false);
+      const [editingFileId, setEditingFileId] = useState(null);
+      const [tempImageB64, setTempImageB64] = useState(null);
+
+      // Camera & Physics State
+      const canvasRef = useRef(null);
+      const [camera, setCamera] = useState({ x: 0, y: 0 });
+      const [zoom, setZoom] = useState(1);
+      const [interaction, setInteraction] = useState({ mode: 'idle', targetId: null, startX: 0, startY: 0, camStartX: 0, camStartY: 0, offsetX: 0, offsetY: 0 });
+      const [drawingLine, setDrawingLine] = useState(null);
+
+      // --- PERSISTENCE (LocalStorage) ---
+      const STORAGE_KEY = 'SYSTEM_OVERRIDE_DATA';
+
+      useEffect(() => {
+        const initAudio = () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); };
+        document.addEventListener('pointerdown', initAudio, { once: true });
+        
+        // Load Data
+        const savedData = localStorage.getItem(STORAGE_KEY);
+        if (savedData) {
+          try {
+            const parsed = JSON.parse(savedData);
+            setFiles(parsed.files || []);
+            setNodes(parsed.nodes || []);
+            setConnections(parsed.connections || []);
+            if (parsed.camera) setCamera(parsed.camera);
+            if (parsed.zoom) setZoom(parsed.zoom);
+          } catch (e) { console.error("Data corruption detected.", e); }
+        } else {
+          // Default Data
+          setFiles([
+            { id: 'f-init', title: 'SUSPECT_01', content: 'NAME: JOHN DOE\nSTATUS: AT LARGE\n\nNotes: Subject captured on CCTV. Matches description of the alleyway incident.', imageUrl: null }
+          ]);
+        }
+        setIsReady(true);
+        return () => document.removeEventListener('pointerdown', initAudio);
+      }, []);
+
+      // Auto-save on change
+      useEffect(() => {
+        if (!isReady) return;
+        const stateToSave = { files, nodes, connections, camera, zoom };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+        } catch (e) {
+          console.error("STORAGE LIMIT EXCEEDED", e);
+          alert("CRITICAL ERROR: Browser Memory Full. Too many large images.");
+        }
+      }, [files, nodes, connections, camera, zoom, isReady]);
+
+      // --- ZOOM ENGINE (Fixed Dependency) ---
+      useEffect(() => {
+        if (!isReady) return;
+        const el = canvasRef.current;
+        if (!el) return;
+
+        const handleWheel = (e) => {
+          e.preventDefault(); 
+          
+          const zoomSensitivity = 0.0015;
+          const delta = -e.deltaY * zoomSensitivity;
+
+          setZoom(prevZoom => {
+            const newZoom = Math.min(Math.max(0.15, prevZoom + delta), 2.5); 
+            
+            const rect = el.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            setCamera(prevCam => {
+              const scaleRatio = newZoom / prevZoom;
+              return {
+                x: mouseX - (mouseX - prevCam.x) * scaleRatio,
+                y: mouseY - (mouseY - prevCam.y) * scaleRatio
+              };
+            });
+            
+            return newZoom;
+          });
+        };
+
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+      }, [isReady]);
+
+      // --- DATA MUTATIONS ---
+      const saveFile = (id, title, content) => {
+        const formattedTitle = title.toUpperCase() || 'UNTITLED_EVIDENCE';
+        const targetImage = tempImageB64 !== undefined ? tempImageB64 : (id ? files.find(f => f.id === id).imageUrl : null);
+        
+        if (id) {
+          setFiles(prev => prev.map(f => f.id === id ? { ...f, title: formattedTitle, content, imageUrl: targetImage } : f));
+          setNodes(prev => prev.map(n => n.file.id === id ? { ...n, file: { ...n.file, title: formattedTitle, content, imageUrl: targetImage } } : n));
+        } else {
+          const newFile = { id: `f-${Date.now()}`, title: formattedTitle, content, imageUrl: targetImage };
+          setFiles([...files, newFile]);
+        }
+        
+        closeModal();
+        sfx.clack();
+      };
+
+      const closeModal = () => {
+        setModalOpen(false);
+        setEditingFileId(null);
+        setTempImageB64(null);
+      };
+
+      // Limpa todas as instâncias da evidência do QUADRO (Mas preserva no arquivo)
+      const removeEvidenceFromBoard = (fileId) => {
+        const nodesToRemove = nodes.filter(n => n.file.id === fileId).map(n => n.id);
+        setNodes(prev => prev.filter(n => n.file.id !== fileId));
+        setConnections(prev => prev.filter(c => !nodesToRemove.includes(c.from) && !nodesToRemove.includes(c.to)));
+        sfx.error();
+      };
+
+      // Apaga do sistema inteiro (Arquivo e Quadro)
+      const deleteFile = (fileId) => {
+        setFiles(prev => prev.filter(f => f.id !== fileId));
+        const nodesToRemove = nodes.filter(n => n.file.id === fileId).map(n => n.id);
+        setNodes(prev => prev.filter(n => n.file.id !== fileId));
+        setConnections(prev => prev.filter(c => !nodesToRemove.includes(c.from) && !nodesToRemove.includes(c.to)));
+        sfx.error();
+      };
+
+      const deleteConnection = (connId) => {
+        setConnections(prev => prev.filter(c => c.id !== connId));
+        sfx.rip();
+      };
+
+      const bringToFront = (nodeId) => {
+        const maxZ = Math.max(0, ...nodes.map(n => n.zIndex || 0));
+        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, zIndex: maxZ + 1 } : n));
+      };
+
+      const toggleNodeOpen = (id) => {
+        bringToFront(id);
+        setNodes(prev => prev.map(n => {
+          if (n.id === id) { sfx.click(); return { ...n, isOpen: !n.isOpen }; }
+          return n;
+        }));
+      };
+
+      // --- WORLD POINTER PHYSICS ---
+      const handlePointerDown = (e) => {
+        if (!canvasRef.current) return;
+        if (e.button === 2) return; 
+
+        canvasRef.current.setPointerCapture(e.pointerId);
+        const isBackground = e.target.id === 'canvas-bg' || e.target.tagName.toLowerCase() === 'svg';
+        
+        if (isBackground) {
+          setInteraction({ mode: 'panning', targetId: null, startX: e.clientX, startY: e.clientY, camStartX: camera.x, camStartY: camera.y });
+        }
+      };
+
+      const handlePointerMove = (e) => {
+        if (!canvasRef.current) return;
+
+        if (interaction.mode === 'panning') {
+          const dx = e.clientX - interaction.startX;
+          const dy = e.clientY - interaction.startY;
+          setCamera({ x: interaction.camStartX + dx, y: interaction.camStartY + dy });
+        } 
+        else if (interaction.mode === 'draggingNode') {
+          const rect = canvasRef.current.getBoundingClientRect();
+          const worldX = (e.clientX - rect.left - camera.x) / zoom;
+          const worldY = (e.clientY - rect.top - camera.y) / zoom;
+          
+          setNodes(prev => prev.map(n => 
+            n.id === interaction.targetId 
+              ? { ...n, x: worldX - interaction.offsetX, y: worldY - interaction.offsetY } 
+              : n
+          ));
+        }
+        else if (interaction.mode === 'drawingString') {
+          const rect = canvasRef.current.getBoundingClientRect();
+          setDrawingLine(prev => ({ 
+            ...prev, 
+            x: (e.clientX - rect.left - camera.x) / zoom, 
+            y: (e.clientY - rect.top - camera.y) / zoom 
+          }));
+        }
+      };
+
+      const handlePointerUp = (e) => {
+        if (canvasRef.current && canvasRef.current.hasPointerCapture(e.pointerId)) {
+          canvasRef.current.releasePointerCapture(e.pointerId);
+        }
+        if (interaction.mode === 'draggingNode') sfx.drop();
+        if (interaction.mode === 'drawingString' && drawingLine) {
+          setTimeout(() => { setDrawingLine(null); sfx.error(); }, 10);
+        }
+        setInteraction({ mode: 'idle', targetId: null });
+      };
+
+      const startNodeDrag = (e, node) => {
+        e.stopPropagation();
+        bringToFront(node.id);
+        const rect = canvasRef.current.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - camera.x) / zoom;
+        const worldY = (e.clientY - rect.top - camera.y) / zoom;
+        
+        setInteraction({
+          mode: 'draggingNode', targetId: node.id,
+          offsetX: worldX - node.x,
+          offsetY: worldY - node.y
+        });
+        sfx.clack();
+      };
+
+      const startConnection = (e, nodeId) => {
+        e.stopPropagation();
+        bringToFront(nodeId);
+        const pinRect = e.target.getBoundingClientRect();
+        const canvasRect = canvasRef.current.getBoundingClientRect();
+        
+        const startX = (pinRect.left + pinRect.width / 2 - canvasRect.left - camera.x) / zoom;
+        const startY = (pinRect.top + pinRect.height / 2 - canvasRect.top - camera.y) / zoom;
+
+        setInteraction({ mode: 'drawingString', targetId: nodeId });
+        setDrawingLine({
+          startNodeId: nodeId, startX, startY,
+          x: (e.clientX - canvasRect.left - camera.x) / zoom,
+          y: (e.clientY - canvasRect.top - camera.y) / zoom
+        });
+        sfx.click();
+      };
+
+      const finishConnection = (e, targetNodeId) => {
+        e.stopPropagation();
+        if (interaction.mode === 'drawingString' && drawingLine && drawingLine.startNodeId !== targetNodeId) {
+          const exists = connections.some(c => 
+            (c.from === drawingLine.startNodeId && c.to === targetNodeId) ||
+            (c.to === drawingLine.startNodeId && c.from === targetNodeId)
+          );
+          if (!exists) {
+            setConnections([...connections, { id: `c-${Date.now()}`, from: drawingLine.startNodeId, to: targetNodeId }]);
+            sfx.connect();
+          } else { sfx.error(); }
+        }
+        setDrawingLine(null);
+        setInteraction({ mode: 'idle', targetId: null });
+      };
+
+      const handleCanvasDrop = (e) => {
+        e.preventDefault();
+        const fileId = e.dataTransfer.getData('fileId');
+        if (!fileId) return;
+
+        const rect = canvasRef.current.getBoundingClientRect();
+        const newX = (e.clientX - rect.left - camera.x) / zoom - 100; 
+        const newY = (e.clientY - rect.top - camera.y) / zoom - 20;
+
+        const file = files.find(f => f.id === fileId);
+        if (file) {
+          setNodes([...nodes, { id: `n-${Date.now()}`, file, x: newX, y: newY, isOpen: true, zIndex: nodes.length + 1 }]);
+          sfx.drop();
+        }
+      };
+
+      const drawStringPath = (x1, y1, x2, y2) => {
+        const dist = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        const sag = Math.min(dist * 0.25, 150); 
+        const midX = (x1 + x2) / 2;
+        const lowestY = Math.max(y1, y2);
+        const midY = lowestY + sag - (Math.abs(y2 - y1) * 0.4); 
+        return `M ${x1} ${y1} Q ${midX} ${midY} ${x2} ${y2}`;
+      };
+
+      if (!isReady) return null;
+
+      return (
+        <div className="flex w-screen h-screen bg-[var(--bg-void)] overflow-hidden relative select-none">
+          <div className="noise-overlay" />
+          
+          {/* SIDEBAR */}
+          <aside className="w-[300px] bg-[#F4F4F0] border-r-[4px] border-black flex flex-col z-50 shadow-[8px_0px_0px_0px_rgba(0,0,0,0.5)] relative">
+            <div className="p-6 border-b-[4px] border-black bg-black text-white flex flex-col gap-1">
+              <span className="font-bold text-2xl uppercase tracking-tighter leading-none">Evidence_Log</span>
+              <span className="text-xs font-mono text-gray-400">DEPT. OF INVESTIGATION // SYS.ON</span>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {files.map(file => (
+                <div key={file.id} className="group relative flex items-stretch border-[2px] border-black bg-white hover:border-[var(--red-thread)] hover:shadow-[4px_4px_0px_0px_var(--red-thread)] transition-all duration-150">
+                  <div 
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.setData('fileId', file.id); sfx.clack(); }}
+                    className="p-3 flex-1 flex items-center gap-3 cursor-grab active:cursor-grabbing"
+                  >
+                    <div className="text-black group-hover:text-[var(--red-thread)] transition-colors">
+                      {file.imageUrl && file.imageUrl.trim() !== '' ? <IconImage /> : <IconFolder />}
+                    </div>
+                    <span className="font-semibold text-sm uppercase truncate pointer-events-none">{file.title}</span>
+                  </div>
+                  <button 
+                    onPointerDown={(e) => { e.stopPropagation(); deleteFile(file.id); }}
+                    className="w-10 border-l-[2px] border-black flex items-center justify-center bg-[var(--paper-raw)] hover:bg-black hover:text-white transition-colors"
+                    title="Destroy Evidence Record"
+                  >
+                    <IconTrash />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 bg-white border-t-[4px] border-black">
+              <button 
+                onPointerDown={() => { setEditingFileId(null); setTempImageB64(null); setModalOpen(true); sfx.clack(); }}
+                className="w-full py-3 border-[3px] border-black bg-black text-white font-bold uppercase tracking-wider shadow-[4px_4px_0px_0px_var(--red-thread)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_var(--red-thread)] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all"
+              >
+                + New Record
+              </button>
+            </div>
+          </aside>
+
+          {/* MAIN BOARD */}
+          <main 
+            id="canvas-bg"
+            ref={canvasRef}
+            className={`flex-1 relative overflow-hidden infinite-grid touch-none ${interaction.mode === 'panning' ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+            style={{ 
+              backgroundPosition: `${camera.x}px ${camera.y}px`,
+              backgroundSize: `${40 * zoom}px ${40 * zoom}px`
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onDrop={handleCanvasDrop}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            {/* World Space Container */}
+            <div 
+              className="absolute top-0 left-0 origin-top-left pointer-events-none" 
+              style={{ transform: `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${zoom})` }}
+            >
+              {/* SVG Connections Layer */}
+              <svg style={{ width: 1, height: 1, overflow: 'visible' }} className="absolute top-0 left-0 z-0 pointer-events-none">
+                <defs>
+                  <filter id="stringShadow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feDropShadow dx="2" dy="4" stdDeviation="2" floodColor="#000" floodOpacity="0.4" />
+                  </filter>
+                </defs>
+
+                {connections.map(conn => {
+                  const n1 = nodes.find(n => n.id === conn.from);
+                  const n2 = nodes.find(n => n.id === conn.to);
+                  if (!n1 || !n2) return null;
+                  
+                  const x1 = n1.x + (n1.isOpen ? 160 : 100); 
+                  const y1 = n1.y + 12;  
+                  const x2 = n2.x + (n2.isOpen ? 160 : 100);
+                  const y2 = n2.y + 12;
+                  const pathStr = drawStringPath(x1, y1, x2, y2);
+                  
+                  return (
+                    <g key={conn.id} className="cursor-pointer pointer-events-auto group" onPointerDown={(e) => { e.stopPropagation(); deleteConnection(conn.id); }}>
+                      <path d={pathStr} fill="none" stroke="transparent" strokeWidth="25" />
+                      <path d={pathStr} fill="none" stroke="var(--red-thread)" strokeWidth="3.5" filter="url(#stringShadow)" className="group-hover:stroke-[var(--blue-tape)] transition-colors" />
+                    </g>
+                  );
+                })}
+
+                {drawingLine && (
+                  <path d={drawStringPath(drawingLine.startX, drawingLine.startY, drawingLine.x, drawingLine.y)} fill="none" stroke="var(--red-thread)" strokeWidth="3.5" filter="url(#stringShadow)" strokeDasharray="6 4" />
+                )}
+              </svg>
+
+              {/* Nodes Layer */}
+              {nodes.map(node => (
+                <div 
+                  key={node.id}
+                  className="absolute pointer-events-auto"
+                  style={{ left: node.x, top: node.y, zIndex: node.zIndex || 10 }}
+                >
+                  <div 
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-[var(--red-thread)] border-[3px] border-black shadow-[2px_4px_0px_0px_rgba(0,0,0,0.5)] z-20 cursor-crosshair hover:scale-110 transition-transform flex items-center justify-center text-black"
+                    onPointerDown={(e) => startConnection(e, node.id)}
+                    onPointerUp={(e) => finishConnection(e, node.id)}
+                    title="Drag to connect thread"
+                  >
+                     <div className="w-1.5 h-1.5 rounded-full bg-white opacity-50 pointer-events-none" />
+                  </div>
+
+                  <div 
+                    className={`border-[4px] border-black bg-[var(--paper-raw)] flex flex-col shadow-[8px_8px_0px_0px_rgba(0,0,0,0.8)] cursor-move
+                      ${node.isOpen ? 'w-[320px]' : 'w-[200px] h-[60px] hover:-translate-y-1 hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,0.8)] transition-shadow duration-150'}`}
+                    onPointerDown={(e) => {
+                      if (e.target.closest('button') || e.target.closest('.select-text')) return;
+                      startNodeDrag(e, node);
+                    }}
+                    onDoubleClick={(e) => { e.stopPropagation(); toggleNodeOpen(node.id); }}
+                  >
+                    <div 
+                      className={`flex justify-between items-center select-none ${node.isOpen ? 'bg-black text-white p-3' : 'p-3 bg-[var(--paper-raw)] text-black'}`}
+                    >
+                      <span className={`font-bold tracking-tight uppercase truncate ${!node.isOpen && 'text-sm pointer-events-none'}`}>
+                        {node.file.title}
+                      </span>
+                      
+                      {!node.isOpen && (
+                        <button onPointerDown={(e) => { e.stopPropagation(); toggleNodeOpen(node.id); }} className="hover:text-[var(--red-thread)] transition-colors ml-2" title="Open Evidence">
+                          <IconExpand />
+                        </button>
+                      )}
+
+                      {node.isOpen && (
+                        <div className="flex items-center gap-2">
+                          <button onPointerDown={(e) => { e.stopPropagation(); setEditingFileId(node.file.id); setTempImageB64(node.file.imageUrl); setModalOpen(true); sfx.clack(); }} className="hover:text-[var(--blue-tape)] transition-colors" title="Edit">
+                            <IconEdit />
+                          </button>
+                          <button onPointerDown={(e) => { e.stopPropagation(); removeEvidenceFromBoard(node.file.id); }} className="hover:text-[var(--red-thread)] transition-colors" title="Clear evidence from board">
+                            <IconTrash />
+                          </button>
+                          <button onPointerDown={(e) => { e.stopPropagation(); toggleNodeOpen(node.id); }} className="hover:text-gray-400 transition-colors ml-1" title="Close">
+                            <IconClose />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {node.isOpen && (
+                      <div className="flex flex-col bg-[var(--paper-raw)]">
+                        {node.file.imageUrl && node.file.imageUrl.trim() !== '' && (
+                          <div className="border-b-[4px] border-black bg-black p-1">
+                             <img src={node.file.imageUrl} alt="Evidence" className="evidence-photo" />
+                          </div>
+                        )}
+                        <div className="p-5 doc-content text-black max-h-[300px] overflow-y-auto relative select-text cursor-text">
+                          {node.file.content.length > 50 && (
+                             <div className="absolute top-4 right-4 pointer-events-none z-10">
+                               <span className="stamp-effect">CONFIDENTIAL</span>
+                             </div>
+                          )}
+                          {node.file.content}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </main>
+
+          {/* Brutalist Zoom Indicator */}
+          <div className="absolute bottom-6 right-6 bg-black text-white border-[3px] border-[var(--paper-raw)] px-4 py-2 font-mono font-bold text-sm shadow-[4px_4px_0px_0px_var(--red-thread)] z-40 pointer-events-none">
+            OPTICS: {Math.round(zoom * 100)}%
+          </div>
+
+          {/* DATA ENTRY MODAL */}
+          {modalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="bg-[var(--paper-raw)] w-full max-w-lg border-[4px] border-black shadow-[12px_12px_0px_0px_var(--red-thread)] relative">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-32 h-8 bg-[var(--blue-tape)] opacity-80 rotate-[-2deg] mix-blend-multiply" />
+                <div className="p-6 border-b-[4px] border-black bg-white flex justify-between items-center mt-2">
+                  <span className="font-bold text-2xl uppercase tracking-tighter">
+                    {editingFileId ? 'UPDATE_ENTRY' : 'FILE_ENTRY'}
+                  </span>
+                  <button onClick={() => { closeModal(); sfx.error(); }} className="hover:text-[var(--red-thread)] transition-colors">
+                    <IconClose />
+                  </button>
+                </div>
+                
+                <form 
+                  className="p-8 flex flex-col gap-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.target);
+                    saveFile(editingFileId, fd.get('title'), fd.get('content'));
+                  }}
+                >
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-xs uppercase tracking-widest text-gray-600">Subject / Location</label>
+                    <input 
+                      name="title" 
+                      defaultValue={editingFileId ? files.find(f => f.id === editingFileId)?.title : ''}
+                      autoFocus required autoComplete="off"
+                      className="bg-white border-[2px] border-black p-3 font-bold text-lg outline-none focus:border-[var(--red-thread)] focus:shadow-[4px_4px_0px_0px_var(--red-thread)] transition-all"
+                      placeholder="e.g. JOHN DOE"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-xs uppercase tracking-widest text-gray-600">Photographic Evidence</label>
+                    <label className="bg-white border-[2px] border-black p-3 font-bold text-center cursor-pointer hover:bg-black hover:text-white transition-colors">
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            processImageUpload(e.target.files[0], (base64) => setTempImageB64(base64));
+                          }
+                        }} 
+                      />
+                      {tempImageB64 ? 'PHOTO_SCANNED.JPG [ CHANGE ]' : '[ + UPLOAD FILE ]'}
+                    </label>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-xs uppercase tracking-widest text-gray-600">Field Notes</label>
+                    <textarea 
+                      name="content" 
+                      defaultValue={editingFileId ? files.find(f => f.id === editingFileId)?.content : ''}
+                      required rows={4}
+                      className="bg-white border-[2px] border-black p-3 doc-content outline-none focus:border-[var(--red-thread)] focus:shadow-[4px_4px_0px_0px_var(--red-thread)] resize-none transition-all"
+                      placeholder="Type investigation details here..."
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-4 mt-2">
+                    <button type="button" onClick={() => { closeModal(); sfx.error(); }} className="font-bold uppercase tracking-wider text-black hover:text-[var(--red-thread)] transition-colors px-4">
+                      Cancel
+                    </button>
+                    <button type="submit" className="bg-black text-white border-[2px] border-black px-8 py-3 font-bold uppercase tracking-wider shadow-[4px_4px_0px_0px_black] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_black] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all">
+                      {editingFileId ? 'Overwrite' : 'File Report'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<InvestigationBoard />);
+  </script>
+</body>
+</html>
